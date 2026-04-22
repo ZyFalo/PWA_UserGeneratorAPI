@@ -1,6 +1,6 @@
 const API_BASE = 'https://randomuser.me/api/';
 const RESULTS_PER_PAGE = 20;
-const FETCH_THROTTLE_MS = 2500;
+const MIN_SPINNER_MS = 2000;
 const DB_NAME = 'PeopleVaultDB';
 const STORE = 'favorites';
 
@@ -14,7 +14,6 @@ const COUNTRIES = [
 ];
 
 const activeFilters = { gender: '', nats: [] };
-let lastFetchTime = 0;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -107,26 +106,31 @@ async function fetchUsers() {
   if (isLoading) return;
   isLoading = true;
   $('#loading').hidden = false;
+  const startedAt = Date.now();
   try {
     const res = await fetch(buildApiUrl());
     const data = await res.json();
     const newUsers = data.results.map(normalizeUser);
     const isFirstLoad = users.length === 0;
-    users = [...users, ...newUsers];
 
+    // Garantiza que el spinner sea visible al menos MIN_SPINNER_MS
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < MIN_SPINNER_MS) {
+      await new Promise(r => setTimeout(r, MIN_SPINNER_MS - elapsed));
+    }
+
+    users = [...users, ...newUsers];
     if (isFirstLoad || $('#search').value.trim()) {
       renderDirectory();
     } else {
       appendToDirectory(newUsers);
     }
-
     toast(`${newUsers.length} personas cargadas`);
   } catch {
     toast('Error de conexión — mostrando caché');
   } finally {
     $('#loading').hidden = true;
     isLoading = false;
-    lastFetchTime = Date.now();
   }
 }
 
@@ -343,22 +347,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeModal(); closeFilterModal(); }
 });
 
-// Infinite scroll observer con throttle de FETCH_THROTTLE_MS
+// Infinite scroll observer
 const sentinelObserver = new IntersectionObserver((entries) => {
-  if (!entries[0].isIntersecting) return;
-  if (currentView !== 'directory' || isLoading || $('#search').value.trim()) return;
-
-  const elapsed = Date.now() - lastFetchTime;
-  if (elapsed < FETCH_THROTTLE_MS) {
-    const remaining = FETCH_THROTTLE_MS - elapsed;
-    setTimeout(() => {
-      if (!isLoading && currentView === 'directory' && !$('#search').value.trim()) {
-        fetchUsers();
-      }
-    }, remaining);
-    return;
+  if (entries[0].isIntersecting && currentView === 'directory' && !isLoading && !$('#search').value.trim()) {
+    fetchUsers();
   }
-  fetchUsers();
 }, { rootMargin: '300px' });
 
 let searchDebounce;
