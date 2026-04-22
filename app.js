@@ -1,6 +1,20 @@
-const API_URL = 'https://randomuser.me/api/?results=20';
+const API_BASE = 'https://randomuser.me/api/';
+const RESULTS_PER_PAGE = 20;
+const FETCH_THROTTLE_MS = 2500;
 const DB_NAME = 'PeopleVaultDB';
 const STORE = 'favorites';
+
+const COUNTRIES = [
+  ['AU','Australia'],['BR','Brasil'],['CA','Canadá'],['CH','Suiza'],
+  ['DE','Alemania'],['DK','Dinamarca'],['ES','España'],['FI','Finlandia'],
+  ['FR','Francia'],['GB','Reino Unido'],['IE','Irlanda'],['IN','India'],
+  ['IR','Irán'],['MX','México'],['NL','Países Bajos'],['NO','Noruega'],
+  ['NZ','Nueva Zelanda'],['RS','Serbia'],['TR','Turquía'],['UA','Ucrania'],
+  ['US','Estados Unidos']
+];
+
+const activeFilters = { gender: '', nats: [] };
+let lastFetchTime = 0;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -82,12 +96,19 @@ function normalizeUser(u) {
 
 let isLoading = false;
 
+function buildApiUrl() {
+  const params = new URLSearchParams({ results: RESULTS_PER_PAGE });
+  if (activeFilters.gender) params.set('gender', activeFilters.gender);
+  if (activeFilters.nats.length) params.set('nat', activeFilters.nats.join(','));
+  return `${API_BASE}?${params}`;
+}
+
 async function fetchUsers() {
   if (isLoading) return;
   isLoading = true;
   $('#loading').hidden = false;
   try {
-    const res = await fetch(API_URL);
+    const res = await fetch(buildApiUrl());
     const data = await res.json();
     const newUsers = data.results.map(normalizeUser);
     const isFirstLoad = users.length === 0;
@@ -105,6 +126,7 @@ async function fetchUsers() {
   } finally {
     $('#loading').hidden = true;
     isLoading = false;
+    lastFetchTime = Date.now();
   }
 }
 
@@ -318,14 +340,25 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); closeFilterModal(); }
 });
 
-// Infinite scroll observer
+// Infinite scroll observer con throttle de FETCH_THROTTLE_MS
 const sentinelObserver = new IntersectionObserver((entries) => {
-  if (entries[0].isIntersecting && currentView === 'directory' && !isLoading && !$('#search').value.trim()) {
-    fetchUsers();
+  if (!entries[0].isIntersecting) return;
+  if (currentView !== 'directory' || isLoading || $('#search').value.trim()) return;
+
+  const elapsed = Date.now() - lastFetchTime;
+  if (elapsed < FETCH_THROTTLE_MS) {
+    const remaining = FETCH_THROTTLE_MS - elapsed;
+    setTimeout(() => {
+      if (!isLoading && currentView === 'directory' && !$('#search').value.trim()) {
+        fetchUsers();
+      }
+    }, remaining);
+    return;
   }
+  fetchUsers();
 }, { rootMargin: '300px' });
 
 let searchDebounce;
@@ -339,11 +372,91 @@ $('#search').addEventListener('input', () => {
 
 // ── Init ──
 
+// ── Filter modal ──
+
+function renderNatChips() {
+  $('#nat-chips').innerHTML = COUNTRIES.map(([code, name]) => `
+    <button class="chip" data-nat="${code}">
+      <img class="flag" src="${flagUrl(code)}" alt="${code}" width="18" height="13" loading="lazy">
+      ${name}
+    </button>`).join('');
+}
+
+function syncFilterChipsUI() {
+  $$('#gender-chips .chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.gender === activeFilters.gender);
+  });
+  $$('#nat-chips .chip').forEach(c => {
+    c.classList.toggle('active', activeFilters.nats.includes(c.dataset.nat));
+  });
+}
+
+function updateFilterBadge() {
+  const count = (activeFilters.gender ? 1 : 0) + activeFilters.nats.length;
+  const badge = $('#filter-badge');
+  badge.textContent = count;
+  badge.hidden = count === 0;
+  $('#filter-btn').classList.toggle('has-filters', count > 0);
+}
+
+function openFilterModal() {
+  syncFilterChipsUI();
+  $('#filter-modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeFilterModal() {
+  $('#filter-modal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+async function applyFilters() {
+  closeFilterModal();
+  users = [];
+  $('#user-grid').innerHTML = '';
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  updateFilterBadge();
+  await fetchUsers();
+}
+
+function clearFilters() {
+  activeFilters.gender = '';
+  activeFilters.nats = [];
+  syncFilterChipsUI();
+}
+
+// Filter event delegation
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#filter-btn')) return openFilterModal();
+  if (e.target.closest('[data-close-filter]')) return closeFilterModal();
+  if (e.target.closest('#filter-modal .modal-backdrop')) return closeFilterModal();
+  if (e.target.closest('#filter-apply')) return applyFilters();
+  if (e.target.closest('#filter-clear')) return clearFilters();
+
+  const genderChip = e.target.closest('#gender-chips .chip');
+  if (genderChip) {
+    activeFilters.gender = genderChip.dataset.gender;
+    syncFilterChipsUI();
+    return;
+  }
+
+  const natChip = e.target.closest('#nat-chips .chip');
+  if (natChip) {
+    const code = natChip.dataset.nat;
+    const idx = activeFilters.nats.indexOf(code);
+    if (idx >= 0) activeFilters.nats.splice(idx, 1);
+    else activeFilters.nats.push(code);
+    syncFilterChipsUI();
+    return;
+  }
+});
+
 async function init() {
   await openDB();
   const favs = await getAllFavs();
   favs.forEach(f => favIds.add(f.id));
   updateBadge(favs.length);
+  renderNatChips();
   await fetchUsers();
   sentinelObserver.observe($('#sentinel'));
 

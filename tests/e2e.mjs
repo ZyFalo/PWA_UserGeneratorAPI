@@ -177,6 +177,50 @@ async function test(name, fn) {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(500);
 
+  // ── 8.5. Filtros API ──
+  log('🔄', 'Probando filtros de API (género + nacionalidad)...');
+  await page.click('#filter-btn');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: join(SHOTS, '07b-modal-filtros.png') });
+
+  await test('Modal de filtros se abre', async () => {
+    const modal = await page.$('#filter-modal');
+    const hidden = await modal.getAttribute('hidden');
+    if (hidden !== null) throw new Error('Modal de filtros no abrió');
+  });
+
+  // Selecciona género femenino y nacionalidad ES
+  await page.click('[data-gender="female"]');
+  await page.click('[data-nat="ES"]');
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: join(SHOTS, '07c-filtros-seleccionados.png') });
+  await page.click('#filter-apply');
+  await page.waitForTimeout(3500);
+  await page.screenshot({ path: join(SHOTS, '07d-resultados-filtrados.png'), fullPage: true });
+
+  await test('Aplicar filtros: usuarios son mujeres de España', async () => {
+    const cards = await page.$$('.card');
+    if (cards.length === 0) throw new Error('No se cargaron usuarios filtrados');
+    const countries = await Promise.all(
+      cards.slice(0, 5).map(c => c.$eval('.card-country', el => el.textContent.trim()))
+    );
+    const allSpain = countries.every(c => c.includes('Spain'));
+    if (!allSpain) throw new Error(`No todos son de España: ${countries.join(', ')}`);
+    log('   📊', `${cards.length} cards, todos de España ✓`);
+  });
+
+  await test('Badge de filtros muestra 2', async () => {
+    const badge = await page.textContent('#filter-badge');
+    if (badge.trim() !== '2') throw new Error(`Badge: "${badge}" en vez de "2"`);
+  });
+
+  // Limpia filtros
+  await page.click('#filter-btn');
+  await page.waitForTimeout(300);
+  await page.click('#filter-clear');
+  await page.click('#filter-apply');
+  await page.waitForTimeout(3000);
+
   // ── 9. Búsqueda por país ──
   log('🔄', 'Probando búsqueda por país...');
   const countryText = await page.textContent('.card:nth-child(5) .card-country');
