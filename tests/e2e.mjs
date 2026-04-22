@@ -161,18 +161,21 @@ async function test(name, fn) {
     if (hidden === null) throw new Error('El modal no se cerró con Escape');
   });
 
-  // ── 8. Cargar más ──
-  log('🔄', 'Probando "Cargar más"...');
+  // ── 8. Scroll infinito ──
+  log('🔄', 'Probando scroll infinito...');
   const cardsBefore = (await page.$$('.card')).length;
-  await page.click('#load-more');
-  await page.waitForTimeout(3000);
-  await page.screenshot({ path: join(SHOTS, '07-cargar-mas.png'), fullPage: true });
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(3500);
+  await page.screenshot({ path: join(SHOTS, '07-scroll-infinito.png'), fullPage: true });
 
-  await test('Cargar más agrega nuevas cards', async () => {
+  await test('Scroll al final auto-carga más cards', async () => {
     const cardsAfter = (await page.$$('.card')).length;
     if (cardsAfter <= cardsBefore) throw new Error(`Antes: ${cardsBefore}, después: ${cardsAfter}`);
-    log('   📊', `${cardsBefore} → ${cardsAfter} cards`);
+    log('   📊', `${cardsBefore} → ${cardsAfter} cards (auto-cargadas)`);
   });
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(500);
 
   // ── 9. Búsqueda por país ──
   log('🔄', 'Probando búsqueda por país...');

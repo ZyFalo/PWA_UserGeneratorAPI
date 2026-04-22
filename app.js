@@ -80,9 +80,12 @@ function normalizeUser(u) {
 
 // ── Fetch users ──
 
+let isLoading = false;
+
 async function fetchUsers() {
+  if (isLoading) return;
+  isLoading = true;
   $('#loading').hidden = false;
-  $('#load-more').hidden = true;
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
@@ -91,10 +94,10 @@ async function fetchUsers() {
     renderDirectory();
     toast(`${newUsers.length} personas cargadas`);
   } catch {
-    toast('Error de conexión — mostrando caché', true);
+    toast('Error de conexión — mostrando caché');
   } finally {
     $('#loading').hidden = true;
-    $('#load-more').hidden = false;
+    isLoading = false;
   }
 }
 
@@ -305,7 +308,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
 });
 
-$('#load-more').addEventListener('click', fetchUsers);
+// Infinite scroll observer
+const sentinelObserver = new IntersectionObserver((entries) => {
+  if (entries[0].isIntersecting && currentView === 'directory' && !isLoading && !$('#search').value.trim()) {
+    fetchUsers();
+  }
+}, { rootMargin: '300px' });
 
 let searchDebounce;
 $('#search').addEventListener('input', () => {
@@ -324,6 +332,7 @@ async function init() {
   favs.forEach(f => favIds.add(f.id));
   updateBadge(favs.length);
   await fetchUsers();
+  sentinelObserver.observe($('#sentinel'));
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js', { scope: './' });
