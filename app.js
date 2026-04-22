@@ -90,8 +90,15 @@ async function fetchUsers() {
     const res = await fetch(API_URL);
     const data = await res.json();
     const newUsers = data.results.map(normalizeUser);
+    const isFirstLoad = users.length === 0;
     users = [...users, ...newUsers];
-    renderDirectory();
+
+    if (isFirstLoad || $('#search').value.trim()) {
+      renderDirectory();
+    } else {
+      appendToDirectory(newUsers);
+    }
+
     toast(`${newUsers.length} personas cargadas`);
   } catch {
     toast('Error de conexión — mostrando caché');
@@ -145,6 +152,12 @@ function renderDirectory() {
     u.country.toLowerCase().includes(query)
   );
   $('#user-grid').innerHTML = filtered.map((u, i) => cardHTML(u, i)).join('');
+}
+
+function appendToDirectory(newUsers) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = newUsers.map((u, i) => cardHTML(u, i)).join('');
+  $('#user-grid').appendChild(tpl.content);
 }
 
 async function renderFavorites() {
